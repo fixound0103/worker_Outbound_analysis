@@ -7,8 +7,8 @@ import os
 # 1. 웹페이지 레이아웃 및 타이틀 설정
 st.set_page_config(page_title="작업자별 출고 작업시간 생산성 분석", layout="centered")
 
-st.title("🏭 작업자별 출고 작업시간 생산성 분석 프로그램")
-st.write("엑셀 파일을 업로드하고 기준 초를 지정하여 리포트 결과를 만들어 보세요.")
+st.title("🏭 주문 유형별 통합 생산성 분석 프로그램")
+st.write("엑셀 파일을 업로드하고 기준 초를 지정하여 마스터 요약이 포함된 11개 시트의 리포트를 만들어 보세요.")
 
 # 2. 파일 다중 업로드 및 기준 초 입력 섹션
 uploaded_files = st.file_uploader(
@@ -39,19 +39,16 @@ def generate_5_sheets(df_source, target_sec):
         '60~90초', '90~120초', '120~150초', '150~180초', '180~360초', '360~540초', '540~720초', '720초~'
     ]
 
+    # 파이참 코드처럼 데이터가 비어있어도 헤더 구조가 유지된 정상 뼈대 반환
     if df_source.empty:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        empty_s1 = pd.DataFrame(columns=['작업자명', '작업수', f'0~{target_sec}초 작업 수', f'{target_sec}초이후 작업 수', f'0~{target_sec}초 작업시간 총합', f'{target_sec}초이후 작업시간 총합', '생산성(초)', '생산성(시간)'])
+        empty_s2 = pd.DataFrame(columns=['작업자명'] + labels + ['총수량'])
+        empty_s3 = pd.DataFrame(columns=df_source.columns)
+        empty_s4 = pd.DataFrame(columns=df_source.columns)
+        empty_s5 = pd.DataFrame()
+        return empty_s1, empty_s2, empty_s3, empty_s4, empty_s5
 
     df_src = df_source.copy()
-    
-    # 💡 [위치 전면 수정] 정렬 시작 전에 작업자명이 없는(NaN/공백/글자 'nan') 유효하지 않은 데이터 원천 배제
-    df_src = df_src[df_src['작업자'].notna()]
-    df_src = df_src[(df_src['작업자'].astype(str).str.strip() != '') & (df_src['작업자'].astype(str).str.lower() != 'nan')]
-
-    # 필터링했더니 데이터가 다 사라진 경우 빈값 처리
-    if df_src.empty:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
     df_src['작업일시'] = pd.to_datetime(df_src['작업일시'])
 
     # 1. 작업자별정렬
@@ -93,7 +90,7 @@ def generate_5_sheets(df_source, target_sec):
         }).reset_index(drop=True)
         columns_to_combine.append(p_res)
 
-        # 시트 1 계산
+        # 시트 1 계산 (중복 +1 버그 완전 제거)
         df_under_target = p_df[(p_df['작업간격_초'] >= 0) & (p_df['작업간격_초'] <= target_sec)]
         count_under_target = df_under_target.shape[0]
         sum_time_under_target = df_under_target['작업간격_초'].sum()
@@ -131,6 +128,12 @@ def generate_5_sheets(df_source, target_sec):
     s2_df = pd.DataFrame(detailed_records)
     s5_df = pd.concat(columns_to_combine, axis=1) if columns_to_combine else pd.DataFrame()
 
+    # 요약 정보 탭 유령 작업자(NaN) 걸러내는 필터링
+    if not s1_df.empty:
+        s1_df = s1_df[s1_df['작업자명'].notna() & (s1_df['작업자명'].astype(str).str.strip() != '') & (s1_df['작업자명'].astype(str).str.lower() != 'nan')]
+    if not s2_df.empty:
+        s2_df = s2_df[s2_df['작업자명'].notna() & (s2_df['작업자명'].astype(str).str.strip() != '') & (s2_df['작업자명'].astype(str).str.lower() != 'nan')]
+
     return s1_df, s2_df, s3_df, s4_df, s5_df
 
 
@@ -159,61 +162,56 @@ if uploaded_files:
                         df_dang = df_main[df_main['주문 유형'] == '당특'].copy()
                         df_ilban = df_main[df_main['주문 유형'] == '일반'].copy()
 
-                        # 함수 기동 및 결과 도출
+                        # 함수 기동 및 결과 도출 (데이터 부재 시 빈 뼈대 시트를 받아옴)
                         dang_s1, dang_s2, dang_s3, dang_s4, dang_s5 = generate_5_sheets(df_dang, target_seconds)
                         ilban_s1, ilban_s2, ilban_s3, ilban_s4, ilban_s5 = generate_5_sheets(df_ilban, target_seconds)
 
-                        # 마스터 요약 탭 구성
-                        dang_summary_part = dang_s1.copy() if not dang_s1.empty else pd.DataFrame()
+                        # 💡 [고도화 반영] '유형별전체요약' 마스터 탭 데이터 빌드
+                        dang_summary_part = dang_s1.copy()
                         if not dang_summary_part.empty:
                             dang_summary_part.insert(0, '주문 유형', '당특')
                             dang_summary_part = dang_summary_part.rename(columns={'작업자명': '작업자'})
 
-                        ilban_summary_part = ilban_s1.copy() if not ilban_s1.empty else pd.DataFrame()
+                        ilban_summary_part = ilban_s1.copy()
                         if not ilban_summary_part.empty:
                             ilban_summary_part.insert(0, '주문 유형', '일반')
                             ilban_summary_part = ilban_summary_part.rename(columns={'작업자명': '작업자'})
 
+                        # 파이참처럼 두 요약을 세로 병합 (둘 다 비어있으면 헤더만 정의)
                         if not dang_summary_part.empty or not ilban_summary_part.empty:
                             overall_summary = pd.concat([dang_summary_part, ilban_summary_part], axis=0).reset_index(drop=True)
                         else:
-                            overall_summary = pd.DataFrame(columns=['안내'], data=[['분석 가능한 유효 데이터가 없습니다.']])
+                            overall_summary = pd.DataFrame(columns=['주문 유형', '작업자', '작업수', f'0~{target_seconds}초 작업 수', f'{target_seconds}초이후 작업 수'])
 
+                        # 복수 파일 식별용 접두사 처리 규칙
                         prefix = f"{base_file_name}_" if len(sorted_files) > 1 else ""
 
-                        # 0. 마스터 요약 시트 패키징
+                        # 💡 파이참처럼 강제로 11개 시트를 차례대로 다 적어 내보냅니다 (Empty 상태여도 시트를 보존하여 openpyxl 제약조건 완벽 클리어!)
                         overall_summary.to_excel(writer, sheet_name=f'{prefix}유형별전체요약', index=False)
 
-                        # 💡 [당특 시트셋 예외 처리] 
-                        if not dang_s1.empty:
-                            dang_s1.to_excel(writer, sheet_name=f'{prefix}당특_생산성분석', index=False)
-                            dang_s2.to_excel(writer, sheet_name=f'{prefix}당특_생산성_상세', index=False)
-                            dang_s3.to_excel(writer, sheet_name=f'{prefix}당특_작업자별정렬', index=False)
-                            dang_s4.to_excel(writer, sheet_name=f'{prefix}당특_작업자별주문유니크', index=False)
-                            dang_s5.to_excel(writer, sheet_name=f'{prefix}당특_상세작업시간', index=False)
-                        else:
-                            pd.DataFrame(columns=['안내'], data=[['해당 데이터셋에 유효한 당특 주문 내역이 존재하지 않습니다.']]).to_excel(writer, sheet_name=f'{prefix}당특_데이터없음', index=False)
+                        dang_s1.to_excel(writer, sheet_name=f'{prefix}당특_생산성분석', index=False)
+                        dang_s2.to_excel(writer, sheet_name=f'{prefix}당특_생산성_상세', index=False)
+                        dang_s3.to_excel(writer, sheet_name=f'{prefix}당특_작업자별정렬', index=False)
+                        dang_s4.to_excel(writer, sheet_name=f'{prefix}당특_작업자별주문유니크', index=False)
+                        dang_s5.to_excel(writer, sheet_name=f'{prefix}당특_상세작업시간', index=False)
 
-                        # 💡 [일반 시트셋 예외 처리]
-                        if not ilban_s1.empty:
-                            ilban_s1.to_excel(writer, sheet_name=f'{prefix}일반_생산성분석', index=False)
-                            ilban_s2.to_excel(writer, sheet_name=f'{prefix}일반_생산성_상세', index=False)
-                            ilban_s3.to_excel(writer, sheet_name=f'{prefix}일반_작업자별정렬', index=False)
-                            ilban_s4.to_excel(writer, sheet_name=f'{prefix}일반_작업자별주문유니크', index=False)
-                            ilban_s5.to_excel(writer, sheet_name=f'{prefix}일반_상세작업시간', index=False)
-                        else:
-                            pd.DataFrame(columns=['안내'], data=[['해당 데이터셋에 유효한 일반 주문 내역이 존재하지 않습니다.']]).to_excel(writer, sheet_name=f'{prefix}일반_데이터없음', index=False)
+                        ilban_s1.to_excel(writer, sheet_name=f'{prefix}일반_생산성분석', index=False)
+                        ilban_s2.to_excel(writer, sheet_name=f'{prefix}일반_생산성_상세', index=False)
+                        ilban_s3.to_excel(writer, sheet_name=f'{prefix}일반_작업자별정렬', index=False)
+                        ilban_s4.to_excel(writer, sheet_name=f'{prefix}일반_작업자별주문유니크', index=False)
+                        ilban_s5.to_excel(writer, sheet_name=f'{prefix}일반_상세작업시간', index=False)
 
                 processed_data = output.getvalue()
 
             st.balloons()
             st.success("분석 성공")
 
+            # 다운로드 파일명 빌드 세팅
             display_name = f"{file_names_summary[0]}_외" if len(file_names_summary) > 1 else f"{file_names_summary[0]}"
             final_download_name = f"{display_name}_작업자별_출고_작업시간_{target_seconds}초기준.xlsx"
 
             st.download_button(
-                label="📥 가공된 유형별 통합 엑셀 다운로드",
+                label="📥 가공된 유형별 통합 마스터 엑셀 다운로드",
                 data=processed_data,
                 file_name=final_download_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
