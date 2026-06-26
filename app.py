@@ -39,11 +39,19 @@ def generate_5_sheets(df_source, target_sec):
         '60~90초', '90~120초', '120~150초', '150~180초', '180~360초', '360~540초', '540~720초', '720초~'
     ]
 
-    # 데이터가 아예 없을 경우 빈 데이터프레임들을 반환
     if df_source.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     df_src = df_source.copy()
+    
+    # 💡 [위치 전면 수정] 정렬 시작 전에 작업자명이 없는(NaN/공백/글자 'nan') 유효하지 않은 데이터 원천 배제
+    df_src = df_src[df_src['작업자'].notna()]
+    df_src = df_src[(df_src['작업자'].astype(str).str.strip() != '') & (df_src['작업자'].astype(str).str.lower() != 'nan')]
+
+    # 필터링했더니 데이터가 다 사라진 경우 빈값 처리
+    if df_src.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
     df_src['작업일시'] = pd.to_datetime(df_src['작업일시'])
 
     # 1. 작업자별정렬
@@ -73,7 +81,6 @@ def generate_5_sheets(df_source, target_sec):
         p_df['작업일시_후_str'] = p_df['작업일시_후'].dt.strftime('%Y-%m-%d %H:%M:%S')
         p_df['주문번호_전'] = p_df['주문번호_전'].fillna('-')
 
-        # 시트 5 세팅
         col_prev_order = f"{processor}_주문번호_전"
         col_next_order = f"{processor}_주문번호_후"
         col_prev_time = f"{processor}_작업일시_전"
@@ -86,7 +93,7 @@ def generate_5_sheets(df_source, target_sec):
         }).reset_index(drop=True)
         columns_to_combine.append(p_res)
 
-        # 시트 1 계산 (정정 공식 반영)
+        # 시트 1 계산
         df_under_target = p_df[(p_df['작업간격_초'] >= 0) & (p_df['작업간격_초'] <= target_sec)]
         count_under_target = df_under_target.shape[0]
         sum_time_under_target = df_under_target['작업간격_초'].sum()
@@ -124,12 +131,6 @@ def generate_5_sheets(df_source, target_sec):
     s2_df = pd.DataFrame(detailed_records)
     s5_df = pd.concat(columns_to_combine, axis=1) if columns_to_combine else pd.DataFrame()
 
-    # 작업자명 NaN 값 완벽 차단 필터
-    if not s1_df.empty:
-        s1_df = s1_df[s1_df['작업자명'].notna() & (s1_df['작업자명'].astype(str).str.strip() != '') & (s1_df['작업자명'].astype(str).str.lower() != 'nan')]
-    if not s2_df.empty:
-        s2_df = s2_df[s2_df['작업자명'].notna() & (s2_df['작업자명'].astype(str).str.strip() != '') & (s2_df['작업자명'].astype(str).str.lower() != 'nan')]
-
     return s1_df, s2_df, s3_df, s4_df, s5_df
 
 
@@ -162,7 +163,7 @@ if uploaded_files:
                         dang_s1, dang_s2, dang_s3, dang_s4, dang_s5 = generate_5_sheets(df_dang, target_seconds)
                         ilban_s1, ilban_s2, ilban_s3, ilban_s4, ilban_s5 = generate_5_sheets(df_ilban, target_seconds)
 
-                        # 💡 [예외 처리] '유형별전체요약' 마스터 탭 데이터 구성 구도 제어
+                        # 마스터 요약 탭 구성
                         dang_summary_part = dang_s1.copy() if not dang_s1.empty else pd.DataFrame()
                         if not dang_summary_part.empty:
                             dang_summary_part.insert(0, '주문 유형', '당특')
@@ -173,19 +174,17 @@ if uploaded_files:
                             ilban_summary_part.insert(0, '주문 유형', '일반')
                             ilban_summary_part = ilban_summary_part.rename(columns={'작업자명': '작업자'})
 
-                        # 두 데이터 중 하나라도 있으면 병합, 모두 비어있으면 안내문구 시트화
                         if not dang_summary_part.empty or not ilban_summary_part.empty:
                             overall_summary = pd.concat([dang_summary_part, ilban_summary_part], axis=0).reset_index(drop=True)
                         else:
                             overall_summary = pd.DataFrame(columns=['안내'], data=[['분석 가능한 유효 데이터가 없습니다.']])
 
-                        # 복수 파일 업로드 시 파일명 식별용 접두사 처리 규칙
                         prefix = f"{base_file_name}_" if len(sorted_files) > 1 else ""
 
                         # 0. 마스터 요약 시트 패키징
                         overall_summary.to_excel(writer, sheet_name=f'{prefix}유형별전체요약', index=False)
 
-                        # 💡 [당특 시트셋 예외 처리] 데이터가 존재할 때만 5개 시트 생성, 비어있으면 1개 안내 시트 대체
+                        # 💡 [당특 시트셋 예외 처리] 
                         if not dang_s1.empty:
                             dang_s1.to_excel(writer, sheet_name=f'{prefix}당특_생산성분석', index=False)
                             dang_s2.to_excel(writer, sheet_name=f'{prefix}당특_생산성_상세', index=False)
@@ -193,9 +192,9 @@ if uploaded_files:
                             dang_s4.to_excel(writer, sheet_name=f'{prefix}당특_작업자별주문유니크', index=False)
                             dang_s5.to_excel(writer, sheet_name=f'{prefix}당특_상세작업시간', index=False)
                         else:
-                            pd.DataFrame(columns=['안내'], data=[['해당 데이터셋에 당특 주문 내역이 존재하지 않습니다.']]).to_excel(writer, sheet_name=f'{prefix}당특_데이터없음', index=False)
+                            pd.DataFrame(columns=['안내'], data=[['해당 데이터셋에 유효한 당특 주문 내역이 존재하지 않습니다.']]).to_excel(writer, sheet_name=f'{prefix}당특_데이터없음', index=False)
 
-                        # 💡 [일반 시트셋 예외 처리] 데이터가 존재할 때만 5개 시트 생성, 비어있으면 1개 안내 시트 대체
+                        # 💡 [일반 시트셋 예외 처리]
                         if not ilban_s1.empty:
                             ilban_s1.to_excel(writer, sheet_name=f'{prefix}일반_생산성분석', index=False)
                             ilban_s2.to_excel(writer, sheet_name=f'{prefix}일반_생산성_상세', index=False)
@@ -203,14 +202,13 @@ if uploaded_files:
                             ilban_s4.to_excel(writer, sheet_name=f'{prefix}일반_작업자별주문유니크', index=False)
                             ilban_s5.to_excel(writer, sheet_name=f'{prefix}일반_상세작업시간', index=False)
                         else:
-                            pd.DataFrame(columns=['안내'], data=[['해당 데이터셋에 일반 주문 내역이 존재하지 않습니다.']]).to_excel(writer, sheet_name=f'{prefix}일반_데이터없음', index=False)
+                            pd.DataFrame(columns=['안내'], data=[['해당 데이터셋에 유효한 일반 주문 내역이 존재하지 않습니다.']]).to_excel(writer, sheet_name=f'{prefix}일반_데이터없음', index=False)
 
                 processed_data = output.getvalue()
 
             st.balloons()
             st.success("분석 성공")
 
-            # 파일명 빌드 세팅
             display_name = f"{file_names_summary[0]}_외" if len(file_names_summary) > 1 else f"{file_names_summary[0]}"
             final_download_name = f"{display_name}_작업자별_출고_작업시간_{target_seconds}초기준.xlsx"
 
