@@ -39,13 +39,13 @@ def generate_5_sheets(df_source, target_sec):
         '60~90초', '90~120초', '120~150초', '150~180초', '180~360초', '360~540초', '540~720초', '720초~'
     ]
 
-    # 💡 데이터가 완전히 비어있어도 헤더를 수동 정의하여 openpyxl의 시트 소멸 에러 원천 차단
+    # 데이터가 완전히 비어있어도 헤더를 수동 정의하여 openpyxl의 시트 소멸 에러 원천 차단
     if df_source.empty:
         empty_s1 = pd.DataFrame(columns=['작업자명', '작업수', f'0~{target_sec}초 작업 수', f'{target_sec}초이후 작업 수', f'0~{target_sec}초 작업시간 총합', f'{target_sec}초이후 작업시간 총합', '생산성(초)', '생산성(시간)'])
         empty_s2 = pd.DataFrame(columns=['작업자명'] + labels + ['총수량'])
         empty_s3 = pd.DataFrame(columns=['작업자', '작업일시', '주문번호', '주문 유형'])
         empty_s4 = pd.DataFrame(columns=['작업자', '작업일시', '주문번호', '주문 유형'])
-        empty_s5 = pd.DataFrame()
+        empty_s5 = pd.DataFrame(columns=['안내'], data=[['데이터 없음']])
         return empty_s1, empty_s2, empty_s3, empty_s4, empty_s5
 
     df_src = df_source.copy()
@@ -90,13 +90,14 @@ def generate_5_sheets(df_source, target_sec):
         }).reset_index(drop=True)
         columns_to_combine.append(p_res)
 
-        # 시트 1 계산 (요청하신 중복 누적 +1 오류가 완벽 제거된 순수 집중 UPH 공식)
+        # 시트 1 계산
         df_under_target = p_df[(p_df['작업간격_초'] >= 0) & (p_df['작업간격_초'] <= target_sec)]
         count_under_target = df_under_target.shape[0]
         sum_time_under_target = df_under_target['작업간격_초'].sum()
 
         df_over_target = p_df[p_df['작업간격_초'] > target_sec]
         count_over_target = df_over_target.shape[0]
+        sum_time_over_target = df_over_target['작업간격_초'].sum()
 
         job_count = count_under_target + count_over_target
 
@@ -126,7 +127,7 @@ def generate_5_sheets(df_source, target_sec):
 
     s1_df = pd.DataFrame(stat_records)
     s2_df = pd.DataFrame(detailed_records)
-    s5_df = pd.concat(columns_to_combine, axis=1) if columns_to_combine else pd.DataFrame()
+    s5_df = pd.concat(columns_to_combine, axis=1) if columns_to_combine else pd.DataFrame(columns=['안내'], data=[['상세 데이터 없음']])
 
     # 보고서 요약본 내 유령 작업자(NaN) 걸러내는 필터링
     if not s1_df.empty:
@@ -184,15 +185,18 @@ if uploaded_files:
                             ilban_summary_part.insert(0, '주문 유형', '일반')
                             ilban_summary_part = ilban_summary_part.rename(columns={'작업자명': '작업자'})
 
-                        # 양쪽 데이터 여부 점검 후 결합 (만약 다 비어있을 경우 고정 양식 마련)
+                        # 💡 [핵심 해결 지점] 양쪽 데이터 요약이 모두 비어있을 때 '데이터 없음' 행을 강제 주입하여 openpyxl 시트 완전 보존
                         if not dang_summary_part.empty or not ilban_summary_part.empty:
                             overall_summary = pd.concat([dang_summary_part, ilban_summary_part], axis=0).reset_index(drop=True)
                         else:
-                            overall_summary = pd.DataFrame(columns=['주문 유형', '작업자', '작업수', f'0~{target_seconds}초 작업 수', f'{target_seconds}초이후 작업 수', f'0~{target_seconds}초 작업시간 총합', f'{target_seconds}초이후 작업시간 총합', '생산성(초)', '생산성(시간)'])
+                            overall_summary = pd.DataFrame(
+                                columns=['주문 유형', '작업자', '작업수', f'0~{target_seconds}초 작업 수', f'{target_seconds}초이후 작업 수', f'0~{target_seconds}초 작업시간 총합', f'{target_seconds}초이후 작업시간 총합', '생산성(초)', '생산성(시간)'],
+                                data=[['데이터 없음', '데이터 없음', 0, 0, 0, 0, 0, 0, 0]]
+                            )
 
                         prefix = f"{base_file_name}_" if len(sorted_files) > 1 else ""
 
-                        # 11개 시트 빌드 (어떤 예외 데이터셋이 와도 독립적인 시트 공간 할당)
+                        # 11개 시트 가시화 패키징 빌드
                         overall_summary.to_excel(writer, sheet_name=f'{prefix}유형별전체요약', index=False)
 
                         dang_s1.to_excel(writer, sheet_name=f'{prefix}당특_생산성분석', index=False)
