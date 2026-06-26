@@ -5,10 +5,10 @@ from io import BytesIO
 import os
 
 # 1. 웹페이지 레이아웃 및 타이틀 설정
-st.set_page_config(page_title="유형별 생산성 분석기", layout="centered")
+st.set_page_config(page_title="작업자별 출고 작업시간 생산성 분석", layout="centered")
 
-st.title("🏭 주문 유형별 통합 생산성 분석 프로그램")
-st.write("엑셀 파일을 업로드하고 기준 초를 지정하여 마스터 요약이 포함된 11개 시트의 리포트를 만들어 보세요.")
+st.title("🏭 작업자별 출고 작업시간 생산성 분석석 프로그램")
+st.write("엑셀 파일을 업로드하고 기준 초를 지정하여 리포트 결과를 만들어 보세요.")
 
 # 2. 파일 다중 업로드 및 기준 초 입력 섹션
 uploaded_files = st.file_uploader(
@@ -138,7 +138,7 @@ def generate_5_sheets(df_source, target_sec):
 if uploaded_files:
     st.success(f"총 {len(uploaded_files)}개의 파일이 정상적으로 로드되었습니다!")
 
-    if st.button("유형별 통합 생산성 분석 시작"):
+    if st.button("작업자별 출고 작업시간 생산성 분석 시작"):
         try:
             with st.spinner(f'데이터를 분리하여 마스터 대조 요약 및 유형별 5개 시트 리포트를 생성 중입니다...'):
 
@@ -199,10 +199,10 @@ if uploaded_files:
 
             # 파일명 빌드 세팅
             display_name = f"{file_names_summary[0]}_외" if len(file_names_summary) > 1 else f"{file_names_summary[0]}"
-            final_download_name = f"{display_name}_유형별_종합생산성분석_{target_seconds}초기준.xlsx"
+            final_download_name = f"{display_name}_작업자별_출고_작업시간_{target_seconds}초기준.xlsx"
 
             st.download_button(
-                label="📥 가공된 유형별 통합 마스터 엑셀 다운로드",
+                label="📥 가공된 유형별 통합  엑셀 다운로드",
                 data=processed_data,
                 file_name=final_download_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
