@@ -5,10 +5,10 @@ from io import BytesIO
 import os
 
 # 1. 웹페이지 레이아웃 및 타이틀 설정
-st.set_page_config(page_title="작업자별 출고 작업시간 생산성 분석", layout="centered")
+st.set_page_config(page_title="작업자별,유형별 출고 작업시간 생산성 분석", layout="centered")
 
-st.title("🏭 주문 유형별 통합 생산성 분석 프로그램")
-st.write("엑셀 파일을 업로드하고 기준 초를 지정하여 마스터 요약이 포함된 11개 시트의 리포트를 만들어 보세요.")
+st.title("🏭 작업자별,유형별 출고 작업시간 생산성 분석 프로그램")
+st.write("엑셀 파일을 업로드하고 기준 초를 지정하여 요약이 포함된 리포트를 만들어 보세요.")
 
 # 2. 파일 다중 업로드 및 기준 초 입력 섹션
 uploaded_files = st.file_uploader(
